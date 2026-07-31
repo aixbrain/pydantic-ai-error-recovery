@@ -1,0 +1,69 @@
+[project]
+name = "pydantic-ai-error-recovery"
+version = "0.1.0"
+description = "Tool-call error recovery capability for Pydantic AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "aiXbrain GmbH", email = "dev@aixbrain.de" }]
+keywords = ["pydantic-ai", "agent", "capability", "error-recovery"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
+]
+dependencies = ["anyio>=4", "httpx>=0.27", "pydantic-ai-slim>=2.16,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=9", "pytest-cov>=7", "pyright>=1.1.411", "ruff>=0.16"]
+
+[project.urls]
+Homepage = "https://github.com/aixbrain/pydantic-ai-error-recovery"
+Source = "https://github.com/aixbrain/pydantic-ai-error-recovery"
+Issues = "https://github.com/aixbrain/pydantic-ai-error-recovery/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pydantic_ai_error_recovery"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C901"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.pyright]
+include = ["pydantic_ai_error_recovery", "tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportMissingTypeStubs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["pydantic_ai_error_recovery"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
