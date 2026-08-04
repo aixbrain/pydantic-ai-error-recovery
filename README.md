@@ -13,7 +13,7 @@ Agentic tool calling can fail for many reasons, and adding error handling and re
 
 This package combines the ideas and vocabulary of [pydantic-ai-harness PR #171](https://github.com/pydantic/pydantic-ai-harness/pull/171) with its own mechanics: it uses a `classify` callable rather than a per-tool strategy map for more flexibility; a single `wrap_tool_execute` hook rather than two; and does not expose `str(error)` to the agent by default for added security. It is intended as a stand-alone capability, but also as a proposal of how to make progress on PR #171.
 
-## Quick start
+## Quick Start
 
 ```bash
 pip install pydantic-ai-error-recovery
@@ -32,12 +32,13 @@ Out of the box, connection errors are retried, bugs are propagated, and everythi
 
 The `ToolErrorRecovery` capability supports four different recovery outcomes:
 
-| Outcome       | Effect                                                                       |
-| ------------- | ---------------------------------------------------------------------------- |
-| **retry**     | Re-attempt the tool call a number of times (invisible to the model)          |
-| **inform**    | Report a terminal failure to the model via `ToolFailed` (`outcome='failed'`) |
-| **fallback**  | Return a substitute value as the tool result                                 |
-| **propagate** | Re-raise the exception, will crash the run unless caught by another wrapper  |
+| Outcome | Effect |
+|---|---|
+| **retry** | Re-attempt the tool call a number of times (invisible to the model) |
+| **inform** | Report a terminal failure to the model via `ToolFailed` (`outcome='failed'`) |
+| **fallback** | Return a substitute value as the tool result |
+| **propagate** | Re-raise the exception, will crash the run unless caught by another wrapper |
+
 
 ## Error Classification
 
@@ -46,15 +47,17 @@ The `ToolErrorRecovery` capability supports four different recovery outcomes:
 ```python
 def classify(ctx: RunContext[Any], call: ToolCallPart, error: BaseException) -> RecoveryOutcome:
     if isinstance(error, SomeException):
-        return RecoveryOutcome.inform(...)
+        return RecoveryOutcome.inform(
+            label='Tool call ran into SomeException',
+            expose_message=False,
+        )
     # and so on
 ```
 
-Notes:
-
+**Notes:**
 - You can classify on a tool's name and other properties of the tool call, on the exception type, or both.
 - The `ctx: RunContext` parameter is included for cases in which your classification logic additionally depends on the run context.
-- To not interfere with existing error handling, the following exceptions from the Pydantic AI control flow are never classified: `SkipToolExecution`, `CallDeferred`, `ApprovalRequired`, `ModelRetry`, `ToolRetryError`, `ToolFailed`, and `ToolFailedError`. Note that this list is hardcoded for now and would require updating if Pydantic AI changes their control flow exceptions.
+- To not interfere with existing error handling, the following exceptions from the Pydantic AI control flow are never classified: `SkipToolExecution`, `CallDeferred`, `ApprovalRequired`, `ModelRetry`, `ToolRetryError`, `ToolFailed`, and `ToolFailedError`.
 - Special care must be taken when classifying an exception which is a subclass, be careful about the order of `isinstance(...)` calls, or use `type(...) is` instead.
 
 ## Default Behaviour
@@ -91,22 +94,23 @@ agent = Agent('openai:gpt-5', capabilities=[
             logger=my_logger,
         ),
         max_recoveries=10,
-        per_tool_recoveries={"my_tool_name": 5},
+        per_tool_recoveries={'my_tool_name': 5},
     )
 ])
 ```
 
 ## Contributing
 
-We welcome community contributions, please create an issue to discuss or submit a PR.
+We welcome community contributions under Apache-2.0. Please create an issue to discuss an improvement, or submit a pull request. Clone the repository, then run:
 
 ```bash
 make install   # uv sync --extra dev
+make format    # ruff format
 make all       # lint + typecheck + tests with 100% branch coverage
 ```
 
-`make all` must pass before every commit. Conventions -- coding standards, file layout, testing patterns -- are in [AGENTS.md](AGENTS.md).
+Please ensure that `make all` passes before committing. Coding standards, file layout, and testing patterns can be found in [AGENTS.md](https://github.com/aixbrain/pydantic-ai-error-recovery/blob/main/AGENTS.md).
 
 ## License
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](https://github.com/aixbrain/pydantic-ai-error-recovery/blob/main/LICENSE)
