@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test testcov all
+.PHONY: install lint format format-check typecheck test testcov all
 
 install:
 	uv sync --extra dev
@@ -9,6 +9,9 @@ lint:
 format:
 	uv run ruff format .
 
+format-check:
+	uv run ruff format --check .
+
 typecheck:
 	uv run pyright
 
@@ -18,4 +21,4 @@ test:
 testcov:
 	uv run pytest --cov -q
 
-all: lint typecheck testcov
+all: lint format-check typecheck testcov

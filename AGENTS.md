@@ -55,13 +55,14 @@ Style and conventions follow the official capability library,
 ## Commands
 
 ```bash
-make install    # uv sync --extra dev
-make format     # ruff format
-make lint       # ruff check
-make typecheck  # pyright strict
-make test       # pytest
-make testcov    # pytest with 100% branch coverage
-make all        # lint + typecheck + testcov
+make install      # uv sync --extra dev
+make format       # ruff format (rewrites files)
+make format-check # ruff format --check
+make lint         # ruff check
+make typecheck    # pyright strict
+make test         # pytest
+make testcov      # pytest with 100% branch coverage
+make all          # lint + format-check + typecheck + testcov
 ```
 
 Run `make all` before every commit.

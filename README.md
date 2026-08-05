@@ -105,8 +105,7 @@ We welcome community contributions under Apache-2.0. Please create an issue to d
 
 ```bash
 make install   # uv sync --extra dev
-make format    # ruff format
-make all       # lint + typecheck + tests with 100% branch coverage
+make all       # lint, format, typecheck, and tests with 100% branch coverage
 ```
 
 Please ensure that `make all` passes before committing. Coding standards, file layout, and testing patterns can be found in [AGENTS.md](https://github.com/aixbrain/pydantic-ai-error-recovery/blob/main/AGENTS.md).
