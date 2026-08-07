@@ -22,7 +22,9 @@ Style and conventions follow the official capability library,
   as success.
 - Control-flow exceptions (`ModelRetry`/`ToolRetryError`, `ToolFailed`/`ToolFailedError`,
   `CallDeferred`, `ApprovalRequired`, `SkipToolExecution`) must always propagate
-  untouched, regardless of classifier configuration.
+  untouched, regardless of classifier configuration. The set is hardcoded and
+  tracks Pydantic AI's control flow by hand -- it needs updating whenever core
+  adds or renames a control-flow exception.
 - All tool-recovery logic lives in the single `wrap_tool_execute` hook;
   `on_tool_execute_error` is deliberately not implemented (one counter path,
   no double counting).
@@ -53,13 +55,14 @@ Style and conventions follow the official capability library,
 ## Commands
 
 ```bash
-make install    # uv sync --extra dev
-make format     # ruff format
-make lint       # ruff check
-make typecheck  # pyright strict
-make test       # pytest
-make testcov    # pytest with 100% branch coverage
-make all        # lint + typecheck + testcov
+make install      # uv sync --extra dev
+make format       # ruff format (rewrites files)
+make format-check # ruff format --check
+make lint         # ruff check
+make typecheck    # pyright strict
+make test         # pytest
+make testcov      # pytest with 100% branch coverage
+make all          # lint + format-check + typecheck + testcov
 ```
 
 Run `make all` before every commit.

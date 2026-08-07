@@ -1,6 +1,6 @@
 [project]
 name = "pydantic-ai-error-recovery"
-version = "0.1.0"
+version = "0.1.1"
 description = "Tool-call error recovery capability for Pydantic AI agents"
 readme = "README.md"
 requires-python = ">=3.11"

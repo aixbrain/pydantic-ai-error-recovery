@@ -8,11 +8,14 @@ repos:
   # hook and `make lint` cannot reach different verdicts.
   - repo: local
     hooks:
+      # ruff formats the Python code blocks inside markdown, so the docs are held
+      # to the same style as the source. `ruff check` has no such support -- it
+      # reports "no Python files found" and exits 0 -- so it stays Python-only.
       - id: ruff-format
         name: ruff format
         entry: uv run ruff format
         language: system
-        types: [python]
+        types_or: [python, markdown]
       - id: ruff-check
         name: ruff check
         entry: uv run ruff check --fix
