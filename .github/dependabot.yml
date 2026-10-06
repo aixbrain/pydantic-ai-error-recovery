@@ -1,0 +1,16 @@
+# Weekly lockfile bumps for the runtime dependencies, so CI tests their newest releases. A new
+# major needs a deliberate change to the bounds in pyproject.toml.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    versioning-strategy: lockfile-only
+    allow:
+      - dependency-name: pydantic-ai-slim
+      - dependency-name: httpx
+      - dependency-name: anyio
+    groups:
+      runtime-dependencies:
+        patterns: ['*']
