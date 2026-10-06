@@ -4,13 +4,13 @@ version = "0.1.1"
 description = "Tool-call error recovery capability for Pydantic AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "aiXbrain GmbH", email = "dev@aixbrain.de" }]
 keywords = ["pydantic-ai", "agent", "capability", "error-recovery"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
