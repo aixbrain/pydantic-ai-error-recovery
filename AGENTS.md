@@ -98,4 +98,5 @@ paths. Keep new methods inside the group they belong to.
 ## Package management
 
 - Use `uv` for dependency operations (`uv add`, `uv remove`)
-- Dependency: `pydantic-ai-slim>=2.16,<3` (needs `get_model`, `ToolFailed`)
+- Dependency: `pydantic-ai-slim>=2.54,<3` (needs `get_model`, `ToolFailed`, and hook
+  deadlines that also fire for sync tools in worker threads)

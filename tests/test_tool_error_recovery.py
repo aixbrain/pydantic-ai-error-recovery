@@ -321,16 +321,18 @@ async def test_deadline_and_tool_raised_timeout_are_distinguishable() -> None:
     assert seen == [HookTimeoutError, TimeoutError]
 
 
-async def test_sync_tool_deadline_has_no_effect_by_default() -> None:
-    # A sync tool runs in a worker thread the cancellation cannot reach: under the
-    # default executor the deadline never fires and the result is used. Pinned so the
-    # documented limit cannot rot silently.
+async def test_sync_tool_deadline_informs_by_default() -> None:
+    # A sync tool runs in a worker thread. Since pydantic-ai 2.54 the deadline abandons
+    # that thread instead of waiting for it, so a blocking tool overruns like an async one
+    # and the default must inform, not retry: the thread keeps running and may still
+    # have side effects. Pinned because the floor in `pyproject.toml` rests on it.
     def blocking() -> str:
         time.sleep(0.15)
         return 'sync-ok'
 
     r = await build_with_deadline(0.05, blocking).run('hi')
-    assert 'RESULT:sync-ok' in str(r.output)
+    assert 'HookTimeoutError' in str(r.output)
+    assert 'sync-ok' not in str(r.output)
 
 
 async def test_async_classify_supported() -> None:
