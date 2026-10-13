@@ -95,11 +95,16 @@ class ToolErrorRecovery(AbstractCapability[AgentDepsT]):
             except Exception as exc:  # the recovery boundary
                 with self._chain_callable_bug('classify', call, exc):
                     outcome = await self.policy.run_classify(ctx, call, exc)
+                # The cap of the verdict that governs this attempt, or the attempts already made when a
+                # changed verdict ends a retry chain early -- 'attempt 2/1' would read as a bug.
+                max_attempts = max(attempt + 1, 1 if outcome is None else outcome.max_attempts)
                 if outcome is None or outcome.action == 'propagate':
-                    self._log(logging.ERROR, 'propagate', call, exc, None)
+                    self._log(logging.ERROR, 'propagate', call, exc, None, attempt, max_attempts)
                     raise
-                if outcome.action == 'retry' and attempt + 1 < outcome.max_attempts:
-                    self._log(logging.DEBUG, 'retry', call, exc, None)
+                if outcome.action == 'retry' and attempt + 1 < max_attempts:
+                    # INFO, not DEBUG: at the levels deployments run at, a tool that needed three
+                    # tries must not look like one that worked first time.
+                    self._log(logging.INFO, 'retry', call, exc, None, attempt, max_attempts)
                     await self._sleep_backoff(outcome, attempt, call, exc)
                     attempt += 1
                     continue
@@ -108,15 +113,15 @@ class ToolErrorRecovery(AbstractCapability[AgentDepsT]):
                     # budget checked BEFORE recovering; label the actual reason so operator
                     # dashboards can tell a policy decision from an exhausted budget
                     reason = 'propagate' if terminal.action == 'propagate' else 'budget-exhausted'
-                    self._log(logging.ERROR, reason, call, exc, None)
+                    self._log(logging.ERROR, reason, call, exc, None, attempt, max_attempts)
                     raise
                 if terminal.action == 'fallback':
-                    self._log(logging.WARNING, 'fallback', call, exc, terminal.label)
+                    self._log(logging.WARNING, 'fallback', call, exc, terminal.label, attempt, max_attempts)
                     return terminal.value
                 # render before the WARNING, which would otherwise claim a recovery that never landed
                 with self._chain_callable_bug('format_error', call, exc):
                     text = self.policy.render(call, exc, terminal.label, expose_message=terminal.expose_message)
-                self._log(logging.WARNING, 'inform', call, exc, terminal.label)
+                self._log(logging.WARNING, 'inform', call, exc, terminal.label, attempt, max_attempts)
                 raise ToolFailed(text) from exc  # inform
 
     # --- helpers for the single recovery path above ---
@@ -182,13 +187,26 @@ class ToolErrorRecovery(AbstractCapability[AgentDepsT]):
             exc_info=exc,
         )
 
-    def _log(self, level: int, action: str, call: ToolCallPart, exc: BaseException, label: str | None) -> None:
-        # The log is the only place a recovered failure stays visible to the operator.
+    def _log(
+        self,
+        level: int,
+        action: str,
+        call: ToolCallPart,
+        exc: BaseException,
+        label: str | None,
+        attempt: int,
+        max_attempts: int,
+    ) -> None:
+        # The log is the only place a recovered failure stays visible to the operator. The
+        # attempt fields are 1-based and present on terminal records too, so the record for a
+        # failure that follows exhausted retries says how many tries preceded it.
         self.policy.logger.log(
             level,
-            'tool %r %s: %s: %s',
+            'tool %r %s (attempt %d/%d): %s: %s',
             call.tool_name,
             action,
+            attempt + 1,
+            max_attempts,
             type(exc).__name__,
             exc,
             extra={
@@ -197,6 +215,8 @@ class ToolErrorRecovery(AbstractCapability[AgentDepsT]):
                 'recovery_action': action,
                 'recovery_error': type(exc).__name__,
                 'recovery_label': label,
+                'recovery_attempt': attempt + 1,
+                'recovery_max_attempts': max_attempts,
             },
             exc_info=exc if level >= logging.ERROR else None,
         )
