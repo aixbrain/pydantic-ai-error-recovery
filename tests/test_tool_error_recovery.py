@@ -523,6 +523,66 @@ async def test_on_exhausted_propagate_logged_as_propagate(caplog: pytest.LogCapt
     assert 'budget-exhausted' not in actions
 
 
+def _attempt_fields(record: logging.LogRecord) -> tuple[Any, Any, Any]:
+    return (
+        getattr(record, 'recovery_action', None),
+        getattr(record, 'recovery_attempt', None),
+        getattr(record, 'recovery_max_attempts', None),
+    )
+
+
+async def test_retries_are_logged_at_info_with_attempt_counts(caplog: pytest.LogCaptureFixture) -> None:
+    # DEBUG is below any level a deployment runs at, so a chain that needed three tries
+    # would look like one that worked first time. The terminal record says how many tries
+    # preceded it, so an incident after exhausted retries mentions them.
+    calls = [0]
+
+    def classify(call: Any, error: BaseException) -> RecoveryOutcome:
+        return RecoveryOutcome.retry(3)
+
+    def always_timeout() -> str:
+        calls[0] += 1
+        raise TimeoutError('x')
+
+    with caplog.at_level(logging.INFO, logger='pydantic_ai_error_recovery'):
+        await build(ToolErrorRecovery(RecoveryPolicy(classify=classify)), always_timeout).run('hi')
+    assert calls[0] == 3
+    records = [(r.levelno, *_attempt_fields(r)) for r in caplog.records]
+    assert records == [
+        (logging.INFO, 'retry', 1, 3),
+        (logging.INFO, 'retry', 2, 3),
+        (logging.WARNING, 'inform', 3, 3),
+    ]
+
+
+async def test_terminal_record_without_retries_counts_a_single_attempt(caplog: pytest.LogCaptureFixture) -> None:
+    def bad() -> str:
+        raise ValueError('nope')
+
+    with caplog.at_level(logging.INFO, logger='pydantic_ai_error_recovery'):
+        await build(ToolErrorRecovery(), bad).run('hi')
+    assert [_attempt_fields(r) for r in caplog.records] == [('inform', 1, 1)]
+
+
+async def test_attempt_count_survives_a_changed_verdict(caplog: pytest.LogCaptureFixture) -> None:
+    # The inform verdict that ends the chain carries max_attempts=1, but two attempts
+    # were made; the record reports the attempts made, not a cap smaller than the attempt.
+    calls = [0]
+
+    def classify(call: Any, error: BaseException) -> RecoveryOutcome:
+        return RecoveryOutcome.retry(3) if isinstance(error, TimeoutError) else RecoveryOutcome.inform()
+
+    def timeout_then_value_error() -> str:
+        calls[0] += 1
+        if calls[0] == 1:
+            raise TimeoutError('x')
+        raise ValueError('y')
+
+    with caplog.at_level(logging.INFO, logger='pydantic_ai_error_recovery'):
+        await build(ToolErrorRecovery(RecoveryPolicy(classify=classify)), timeout_then_value_error).run('hi')
+    assert [_attempt_fields(r) for r in caplog.records] == [('retry', 1, 3), ('inform', 2, 2)]
+
+
 async def test_for_run_resets_budget_across_runs() -> None:
     # The per-run counters are re-initialized by for_run's `replace` (fresh default_factory
     # dict, not shared) -- a second run gets its full budget again.
