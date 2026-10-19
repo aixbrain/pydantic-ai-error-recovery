@@ -26,7 +26,7 @@ from pydantic_ai_error_recovery import ToolErrorRecovery
 agent = Agent('openai:gpt-5', capabilities=[ToolErrorRecovery()])
 ```
 
-Out of the box, connection errors are retried, bugs are propagated, and everything else is reported to the model, preventing a crash of the agent run. Continue reading to learn how to customize the capability.
+Out of the box, errors raised before a request was sent (refused connections, connect timeouts) are retried, bugs are propagated, and everything else is reported to the model, preventing a crash of the agent run. Continue reading to learn how to customize the capability.
 
 ## Features
 

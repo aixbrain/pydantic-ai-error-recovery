@@ -49,10 +49,10 @@ def make_default_classify(
 ) -> RecoveryClassifier:
     """Build a conservative classifier: bugs propagate, transient errors retry, deadlines and the rest inform.
 
-    The default transient set covers builtin `TimeoutError`/`ConnectionError` plus httpx
-    timeouts and connect errors -- HTTP-based tools retry out of the box. Other client
-    libraries (qdrant, database drivers) define their own exception roots; pass them in:
-    `make_default_classify(transient=(*DEFAULT_TRANSIENT_TYPES, qdrant_client.QdrantException))`.
+    The default transient set covers refused connections plus httpx connect and pool
+    timeouts -- failures that cannot have reached the server. Idempotent tools can add
+    errors raised after sending:
+    `make_default_classify(transient=(*DEFAULT_TRANSIENT_TYPES, httpx.ReadTimeout))`.
     """
 
     def classify(ctx: RunContext[Any], call: ToolCallPart, error: BaseException) -> RecoveryOutcome:
