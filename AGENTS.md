@@ -34,7 +34,8 @@ Style and conventions follow the official capability library,
   so a changed error type ends the retrying through its own branch; the outcome
   carries no second type filter.
 - User callables (`classify`) may be sync or async and may take an optional
-  leading `RunContext`, detected from the parameters the call fills. Nothing they
+  leading `RunContext`, detected from the parameters the call fills; a signature that
+  fits both forms, such as `(ctx, call, error=None)`, is rejected at construction. Nothing they
   raise is intended, so a bug in one stays fatal and is chained to the failure it
   was handling, never substituted for it.
 - The model-facing default text names the exception type but never includes
@@ -80,7 +81,7 @@ paths. Keep new methods inside the group they belong to.
 - `pydantic_ai_error_recovery/__init__.py` -- public exports (sorted `__all__`)
 - `pydantic_ai_error_recovery/_capability.py` -- `ToolErrorRecovery` (+ control-flow set)
 - `pydantic_ai_error_recovery/_outcome.py` -- `RecoveryOutcome` + default error classifications
-- `pydantic_ai_error_recovery/_policy.py` -- classifier types, `RecoveryPolicy`, `required_positionals`
+- `pydantic_ai_error_recovery/_policy.py` -- classifier types, `RecoveryPolicy`, `takes_ctx`
 - `tests/_agents.py` -- agent builders the test module uses
 - `tests/test_tool_error_recovery.py` -- behaviour tests through
   `Agent(..., capabilities=[...])` with `FunctionModel`

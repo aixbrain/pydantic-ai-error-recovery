@@ -12,7 +12,7 @@ from typing import Any
 import anyio
 import httpx
 import pytest
-from pydantic_ai import Agent, DeferredToolRequests
+from pydantic_ai import Agent, DeferredToolRequests, RunContext
 from pydantic_ai.capabilities import AbstractCapability, Hooks, HookTimeoutError
 from pydantic_ai.exceptions import ApprovalRequired, ModelRetry, ToolFailed, UserError
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
@@ -454,11 +454,43 @@ def one_parameter(call: Any) -> RecoveryOutcome:
     return RecoveryOutcome.inform()
 
 
-def test_classifier_arity_is_rejected_at_construction() -> None:
-    # Otherwise the mismatch surfaces as a TypeError inside the recovery path, at the first tool
-    # failure -- the worst moment to learn that the signature was wrong all along.
-    with pytest.raises(UserError):
-        RecoveryPolicy(classify=one_parameter)  # type: ignore[arg-type]
+def optional_error(call: Any, error: BaseException | None = None) -> RecoveryOutcome:
+    return RecoveryOutcome.inform()
+
+
+def ctx_with_optional_error(ctx: Any, call: Any, error: BaseException | None = None) -> RecoveryOutcome:
+    return RecoveryOutcome.inform()
+
+
+def with_default(call: Any, error: BaseException, threshold: int = 5) -> RecoveryOutcome:
+    return RecoveryOutcome.inform()
+
+
+def ctx_with_var_positional(ctx: Any, call: Any, *args: Any) -> RecoveryOutcome:
+    return RecoveryOutcome.inform()
+
+
+def call_with_var_positional(call: Any, *args: Any) -> RecoveryOutcome:
+    return RecoveryOutcome.inform()
+
+
+@pytest.mark.parametrize(
+    'classify',
+    [
+        pytest.param(one_parameter, id='(call)'),
+        pytest.param(optional_error, id='(call, error=None)'),
+        pytest.param(ctx_with_optional_error, id='(ctx, call, error=None)'),
+        pytest.param(with_default, id='(call, error, threshold=5)'),
+        pytest.param(ctx_with_var_positional, id='(ctx, call, *args)'),
+        pytest.param(call_with_var_positional, id='(call, *args)'),
+    ],
+)
+def test_ambiguous_classifier_signatures_are_rejected_at_construction(classify: Any) -> None:
+    # `(ctx, call, error=None)` and `(call, error, threshold=5)` have the same parameters, so one of
+    # them would be called with the wrong arguments. Rejected at construction; inside the recovery
+    # path it would only show up once a tool fails.
+    with pytest.raises(UserError, match=r'bare \*'):
+        RecoveryPolicy(classify=classify)
 
 
 async def test_var_positional_classifier_is_left_alone() -> None:
@@ -738,17 +770,14 @@ def propagate_bugs(error: BaseException) -> RecoveryOutcome:
     return RecoveryOutcome.propagate() if isinstance(error, DEFAULT_BUG_TYPES) else RecoveryOutcome.inform()
 
 
-# The five accepted shapes of a classifier signature. Bodies are identical; only the
+# The accepted shapes of a classifier signature. Bodies are identical; only the
 # parameters differ, which is what `ctx` detection reads.
 def plain(call: Any, error: BaseException) -> RecoveryOutcome:
     return propagate_bugs(error)
 
 
 def with_ctx(ctx: Any, call: Any, error: BaseException) -> RecoveryOutcome:
-    return propagate_bugs(error)
-
-
-def with_default(call: Any, error: BaseException, threshold: int = 5) -> RecoveryOutcome:
+    assert isinstance(ctx, RunContext)
     return propagate_bugs(error)
 
 
@@ -757,6 +786,12 @@ def with_keyword_only(call: Any, error: BaseException, *, strict: bool = True) -
 
 
 def with_ctx_and_default(ctx: Any, call: Any, error: BaseException, threshold: int = 5) -> RecoveryOutcome:
+    assert isinstance(ctx, RunContext)
+    return propagate_bugs(error)
+
+
+def with_ctx_and_var_positional(ctx: Any, call: Any, error: BaseException, *args: Any) -> RecoveryOutcome:
+    assert isinstance(ctx, RunContext)
     return propagate_bugs(error)
 
 
@@ -765,9 +800,9 @@ def with_ctx_and_default(ctx: Any, call: Any, error: BaseException, threshold: i
     [
         pytest.param(plain, id='(call, error)'),
         pytest.param(with_ctx, id='(ctx, call, error)'),
-        pytest.param(with_default, id='(call, error, threshold=5)'),
         pytest.param(with_keyword_only, id='(call, error, *, strict=True)'),
         pytest.param(with_ctx_and_default, id='(ctx, call, error, threshold=5)'),
+        pytest.param(with_ctx_and_var_positional, id='(ctx, call, error, *args)'),
     ],
 )
 async def test_every_classifier_signature_receives_the_error(classify: Any) -> None:

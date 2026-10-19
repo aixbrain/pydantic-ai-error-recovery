@@ -30,8 +30,9 @@ RecoveryClassifier = (
 The callable receives the tool call and the exception and returns a
 `RecoveryOutcome` (`None` = propagate). It may optionally take a `RunContext`
 as a first argument -- for `deps`, message history, or other run state -- and may
-be sync or async, matching pydantic-ai's optional-`ctx` convention. It is
-re-invoked on every retry attempt, so keep it cheap and idempotent.
+be sync or async, matching pydantic-ai's optional-`ctx` convention. Extra parameters
+must be keyword-only (see `takes_ctx`). It is re-invoked on every retry attempt, so
+keep it cheap and idempotent.
 """
 
 ErrorFormatter = Callable[[ToolCallPart, BaseException, 'str | None'], str]
@@ -72,20 +73,34 @@ def make_default_classify(
 default_classify: RecoveryClassifier = make_default_classify()
 
 
-def required_positionals(func: Callable[..., object]) -> int | None:
-    """How many positional parameters a call must fill, or `None` when the signature says nothing.
+def takes_ctx(func: Callable[..., object]) -> bool:
+    """Whether a classifier's positional parameters say it wants the leading `RunContext`.
 
-    Counted rather than annotated, because the documented `lambda ctx, call, error` form carries none.
-    Only parameters the call fills count: an optional or keyword-only one would shift the payload by one.
-    `*args` absorbs any count, so it yields `None` rather than a misleading zero.
+    Counted rather than annotated, so `lambda ctx, call, error` works. Three required positional
+    parameters can only be `(ctx, call, error)`; exactly two with no room for a third (no optional
+    positional, no `*args`) can only be `(call, error)`; a bare `*args` says nothing and gets
+    `(call, error)`. Every other shape is rejected, because `(ctx, call, error=None)` and
+    `(call, error, threshold=5)` have the same parameters and the call would shift the payload by
+    one in one of them. This cannot see a payload declared keyword-only, such as
+    `(ctx, call, *, error=None)`, or a callable without an introspectable signature.
     """
     try:
         parameters = list(inspect.signature(func).parameters.values())
     except ValueError:  # pragma: no cover - callable without an introspectable signature
-        return None
-    if any(p.kind is p.VAR_POSITIONAL for p in parameters):
-        return None
-    return sum(1 for p in parameters if p.default is p.empty and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD))
+        return False
+    positional = [p for p in parameters if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+    required = sum(1 for p in positional if p.default is p.empty)
+    var_positional = any(p.kind is p.VAR_POSITIONAL for p in parameters)
+    if required == 3:
+        return True
+    if (required == 2 and len(positional) == 2 and not var_positional) or (not positional and var_positional):
+        return False
+    raise UserError(
+        'RecoveryPolicy.classify must take (call, error) or (ctx, call, error); '
+        f'got {len(positional)} positional parameters, {required} of them required'
+        + (' plus *args' if var_positional else '')
+        + '. Put extra parameters after a bare *, e.g. (call, error, *, threshold=5).'
+    )
 
 
 @dataclass
@@ -116,12 +131,9 @@ class RecoveryPolicy:
         """Reject configuration the contract does not allow."""
         if self.max_message_len < 1:
             raise UserError(f'RecoveryPolicy.max_message_len must be positive, got {self.max_message_len}.')
-        required = required_positionals(self.classify)
-        if required is not None and required not in (2, 3):
-            # Caught here rather than as a TypeError inside the recovery path, at the first tool failure.
-            raise UserError(
-                f'RecoveryPolicy.classify must take (call, error) or (ctx, call, error), got {required} parameters.'
-            )
+        # Caught here rather than as a TypeError (or wrong arguments) inside the recovery path,
+        # at the first tool failure.
+        takes_ctx(self.classify)
 
     def render(
         self, call: ToolCallPart, error: BaseException, label: str | None, *, expose_message: bool = False
@@ -150,7 +162,7 @@ class RecoveryPolicy:
     ) -> RecoveryOutcome | None:
         """Call the classifier (passing `ctx` when declared) and await it if async."""
         classify: Callable[..., RecoveryOutcome | None | Awaitable[RecoveryOutcome | None]] = self.classify
-        result = classify(ctx, call, error) if required_positionals(classify) == 3 else classify(call, error)
+        result = classify(ctx, call, error) if takes_ctx(classify) else classify(call, error)
         if inspect.isawaitable(result):
             return await result
         return result
