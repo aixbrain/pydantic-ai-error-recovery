@@ -21,17 +21,19 @@ DEFAULT_BUG_TYPES: tuple[type[BaseException], ...] = (
 """Programming errors: always propagate, never silently recovered."""
 
 DEFAULT_TRANSIENT_TYPES: tuple[type[BaseException], ...] = (
-    TimeoutError,
-    ConnectionError,
-    httpx.TimeoutException,
+    ConnectionRefusedError,
     httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
 )
-"""Errors retried by default: only failures where the request never executed.
+"""Errors retried by default: only failures raised before the request was sent.
 
-Deliberately narrow -- no `OSError` (`FileNotFoundError`/`PermissionError` are not
-transient), no mid-flight `ReadError` (could double-execute a non-idempotent tool),
-no `HTTPStatusError` (retry semantics are a product decision). httpx ships with
-pydantic-ai-slim, so its types cost no dependency.
+A retry is safe only if the first attempt cannot have reached the server, whatever the
+tool does. That rules out read and write timeouts, connection resets and the builtin
+`TimeoutError`, which can all follow a request the server already received; add them
+for idempotent tools. No `OSError` (`FileNotFoundError`/`PermissionError` are not
+transient), no `HTTPStatusError` (retry semantics are a product decision). httpx ships
+with pydantic-ai-slim, so its types cost no dependency.
 """
 
 
@@ -70,8 +72,9 @@ class RecoveryOutcome:
     """For `inform`, append the capped `str(error)` to the model-facing text.
 
     The explicit per-case opt-out of the leak-free default, for exceptions whose text
-    is meant for the model. `label` stays the low-cardinality metric dimension instead
-    of carrying the dynamic message.
+    is meant for the model. The text reaches the model without passing any result-screening
+    hook, so only expose messages from sources you trust. `label` stays the low-cardinality
+    metric dimension instead of carrying the dynamic message.
     """
 
     def __post_init__(self) -> None:

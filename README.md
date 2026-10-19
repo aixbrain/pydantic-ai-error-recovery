@@ -26,7 +26,7 @@ from pydantic_ai_error_recovery import ToolErrorRecovery
 agent = Agent('openai:gpt-5', capabilities=[ToolErrorRecovery()])
 ```
 
-Out of the box, connection errors are retried, bugs are propagated, and everything else is reported to the model, preventing a crash of the agent run. Continue reading to learn how to customize the capability.
+Out of the box, errors raised before a request was sent (refused connections, connect timeouts) are retried, bugs are propagated, and everything else is reported to the model, preventing a crash of the agent run. Continue reading to learn how to customize the capability.
 
 ## Features
 
@@ -59,6 +59,7 @@ def classify(ctx: RunContext[Any], call: ToolCallPart, error: BaseException) -> 
 - The `ctx: RunContext` parameter is included for cases in which your classification logic additionally depends on the run context.
 - To not interfere with existing error handling, the following exceptions from the Pydantic AI control flow are never classified: `SkipToolExecution`, `CallDeferred`, `ApprovalRequired`, `ModelRetry`, `ToolRetryError`, `ToolFailed`, and `ToolFailedError`.
 - Special care must be taken when classifying an exception which is a subclass, be careful about the order of `isinstance(...)` calls, or use `type(...) is` instead.
+- The `inform` text and the `fallback` value are produced after every `after_tool_execute` hook and outside innermost wrappers such as `ToolGuardrail`, so result screening does not see them. Only expose exception text (`expose_message`, `include_traceback`, `format_error`) you trust to reach the model.
 
 ## Default Behaviour
 

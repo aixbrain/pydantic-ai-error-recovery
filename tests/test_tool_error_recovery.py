@@ -10,8 +10,9 @@ import time
 from typing import Any
 
 import anyio
+import httpx
 import pytest
-from pydantic_ai import Agent, DeferredToolRequests
+from pydantic_ai import Agent, DeferredToolRequests, RunContext
 from pydantic_ai.capabilities import AbstractCapability, Hooks, HookTimeoutError
 from pydantic_ai.exceptions import ApprovalRequired, ModelRetry, ToolFailed, UserError
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
@@ -37,7 +38,7 @@ async def test_retry_transient_recovers_transparently() -> None:
     def flaky() -> str:
         calls[0] += 1
         if calls[0] == 1:
-            raise TimeoutError('flaky network')
+            raise ConnectionRefusedError('flaky network')
         return 'ok'
 
     r = await build(ToolErrorRecovery(), flaky).run('hi')
@@ -47,8 +48,6 @@ async def test_retry_transient_recovers_transparently() -> None:
 
 async def test_retry_httpx_errors_out_of_the_box() -> None:
     # httpx ships with pydantic-ai, so HTTP-based tools retry without any configuration.
-    import httpx
-
     calls = [0]
 
     def flaky_http() -> str:
@@ -60,6 +59,21 @@ async def test_retry_httpx_errors_out_of_the_box() -> None:
     r = await build(ToolErrorRecovery(), flaky_http).run('hi')
     assert 'RESULT:ok' in str(r.output)
     assert calls[0] == 2
+
+
+@pytest.mark.parametrize('error', [httpx.ReadTimeout('read timed out'), ConnectionResetError(), TimeoutError()])
+async def test_errors_after_sending_are_not_retried_by_default(error: BaseException) -> None:
+    # The server may already have executed the request, so a retry could run a
+    # non-idempotent tool twice.
+    calls = [0]
+
+    def sent_then_failed() -> str:
+        calls[0] += 1
+        raise error
+
+    r = await build(ToolErrorRecovery(), sent_then_failed).run('hi')
+    assert calls[0] == 1
+    assert type(error).__name__ in str(r.output)
 
 
 async def test_inform_surfaces_error_type_not_message() -> None:
@@ -299,8 +313,7 @@ async def test_deadline_retry_is_opt_in() -> None:
 
 
 async def test_deadline_and_tool_raised_timeout_are_distinguishable() -> None:
-    # The two mean opposite things: a tool-raised timeout means the request never got
-    # through (safe to retry), a deadline may have executed.
+    # A classifier can tell the capability's deadline from a timeout the tool raised itself.
     seen: list[type[BaseException]] = []
 
     def classify(call: Any, error: BaseException) -> RecoveryOutcome:
@@ -367,14 +380,14 @@ async def test_retry_exhaustion_falls_to_inform() -> None:
     # A tool that never recovers is retried max_attempts times, then informs the model.
     calls = [0]
 
-    def always_timeout() -> str:
+    def always_refused() -> str:
         calls[0] += 1
-        raise TimeoutError('always')
+        raise ConnectionRefusedError('always')
 
-    r = await build(ToolErrorRecovery(), always_timeout).run('hi')
+    r = await build(ToolErrorRecovery(), always_refused).run('hi')
     assert calls[0] == 3  # default retry(3): all attempts spent
     assert 'failed' in str(r.output)
-    assert 'TimeoutError' in str(r.output)
+    assert 'ConnectionRefusedError' in str(r.output)
 
 
 async def test_a_changed_error_type_ends_the_retrying() -> None:
@@ -441,11 +454,43 @@ def one_parameter(call: Any) -> RecoveryOutcome:
     return RecoveryOutcome.inform()
 
 
-def test_classifier_arity_is_rejected_at_construction() -> None:
-    # Otherwise the mismatch surfaces as a TypeError inside the recovery path, at the first tool
-    # failure -- the worst moment to learn that the signature was wrong all along.
-    with pytest.raises(UserError):
-        RecoveryPolicy(classify=one_parameter)  # type: ignore[arg-type]
+def optional_error(call: Any, error: BaseException | None = None) -> RecoveryOutcome:
+    return RecoveryOutcome.inform()
+
+
+def ctx_with_optional_error(ctx: Any, call: Any, error: BaseException | None = None) -> RecoveryOutcome:
+    return RecoveryOutcome.inform()
+
+
+def with_default(call: Any, error: BaseException, threshold: int = 5) -> RecoveryOutcome:
+    return RecoveryOutcome.inform()
+
+
+def ctx_with_var_positional(ctx: Any, call: Any, *args: Any) -> RecoveryOutcome:
+    return RecoveryOutcome.inform()
+
+
+def call_with_var_positional(call: Any, *args: Any) -> RecoveryOutcome:
+    return RecoveryOutcome.inform()
+
+
+@pytest.mark.parametrize(
+    'classify',
+    [
+        pytest.param(one_parameter, id='(call)'),
+        pytest.param(optional_error, id='(call, error=None)'),
+        pytest.param(ctx_with_optional_error, id='(ctx, call, error=None)'),
+        pytest.param(with_default, id='(call, error, threshold=5)'),
+        pytest.param(ctx_with_var_positional, id='(ctx, call, *args)'),
+        pytest.param(call_with_var_positional, id='(call, *args)'),
+    ],
+)
+def test_ambiguous_classifier_signatures_are_rejected_at_construction(classify: Any) -> None:
+    # `(ctx, call, error=None)` and `(call, error, threshold=5)` have the same parameters, so one of
+    # them would be called with the wrong arguments. Rejected at construction; inside the recovery
+    # path it would only show up once a tool fails.
+    with pytest.raises(UserError, match=r'bare \*'):
+        RecoveryPolicy(classify=classify)
 
 
 async def test_var_positional_classifier_is_left_alone() -> None:
@@ -725,17 +770,14 @@ def propagate_bugs(error: BaseException) -> RecoveryOutcome:
     return RecoveryOutcome.propagate() if isinstance(error, DEFAULT_BUG_TYPES) else RecoveryOutcome.inform()
 
 
-# The five accepted shapes of a classifier signature. Bodies are identical; only the
+# The accepted shapes of a classifier signature. Bodies are identical; only the
 # parameters differ, which is what `ctx` detection reads.
 def plain(call: Any, error: BaseException) -> RecoveryOutcome:
     return propagate_bugs(error)
 
 
 def with_ctx(ctx: Any, call: Any, error: BaseException) -> RecoveryOutcome:
-    return propagate_bugs(error)
-
-
-def with_default(call: Any, error: BaseException, threshold: int = 5) -> RecoveryOutcome:
+    assert isinstance(ctx, RunContext)
     return propagate_bugs(error)
 
 
@@ -744,6 +786,12 @@ def with_keyword_only(call: Any, error: BaseException, *, strict: bool = True) -
 
 
 def with_ctx_and_default(ctx: Any, call: Any, error: BaseException, threshold: int = 5) -> RecoveryOutcome:
+    assert isinstance(ctx, RunContext)
+    return propagate_bugs(error)
+
+
+def with_ctx_and_var_positional(ctx: Any, call: Any, error: BaseException, *args: Any) -> RecoveryOutcome:
+    assert isinstance(ctx, RunContext)
     return propagate_bugs(error)
 
 
@@ -752,9 +800,9 @@ def with_ctx_and_default(ctx: Any, call: Any, error: BaseException, threshold: i
     [
         pytest.param(plain, id='(call, error)'),
         pytest.param(with_ctx, id='(ctx, call, error)'),
-        pytest.param(with_default, id='(call, error, threshold=5)'),
         pytest.param(with_keyword_only, id='(call, error, *, strict=True)'),
         pytest.param(with_ctx_and_default, id='(ctx, call, error, threshold=5)'),
+        pytest.param(with_ctx_and_var_positional, id='(ctx, call, error, *args)'),
     ],
 )
 async def test_every_classifier_signature_receives_the_error(classify: Any) -> None:
