@@ -59,6 +59,7 @@ def classify(ctx: RunContext[Any], call: ToolCallPart, error: BaseException) -> 
 - The `ctx: RunContext` parameter is included for cases in which your classification logic additionally depends on the run context.
 - To not interfere with existing error handling, the following exceptions from the Pydantic AI control flow are never classified: `SkipToolExecution`, `CallDeferred`, `ApprovalRequired`, `ModelRetry`, `ToolRetryError`, `ToolFailed`, and `ToolFailedError`.
 - Special care must be taken when classifying an exception which is a subclass, be careful about the order of `isinstance(...)` calls, or use `type(...) is` instead.
+- The `inform` text and the `fallback` value are produced after every `after_tool_execute` hook and outside innermost wrappers such as `ToolGuardrail`, so result screening does not see them. Only expose exception text (`expose_message`, `include_traceback`, `format_error`) you trust to reach the model.
 
 ## Default Behaviour
 

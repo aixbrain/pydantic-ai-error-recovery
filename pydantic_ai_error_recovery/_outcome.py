@@ -72,8 +72,9 @@ class RecoveryOutcome:
     """For `inform`, append the capped `str(error)` to the model-facing text.
 
     The explicit per-case opt-out of the leak-free default, for exceptions whose text
-    is meant for the model. `label` stays the low-cardinality metric dimension instead
-    of carrying the dynamic message.
+    is meant for the model. The text reaches the model without passing any result-screening
+    hook, so only expose messages from sources you trust. `label` stays the low-cardinality
+    metric dimension instead of carrying the dynamic message.
     """
 
     def __post_init__(self) -> None:
