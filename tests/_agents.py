@@ -10,8 +10,14 @@ from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolRetu
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 
+def _is_tool_result(part: Any) -> bool:
+    # A retry answers the call as a `ToolReturnPart` too (`outcome='retried'` since pydantic-ai 2.60),
+    # but carries no result. Compared as `str` because older versions' `Literal` lacks the value.
+    return isinstance(part, ToolReturnPart) and str(part.outcome) != 'retried'
+
+
 def tool_returns(messages: list[Any]) -> int:
-    return sum(1 for m in messages for p in m.parts if isinstance(p, ToolReturnPart))
+    return sum(1 for m in messages for p in m.parts if _is_tool_result(p))
 
 
 def call_then_echo(max_calls: int = 1) -> FunctionModel:
@@ -20,7 +26,7 @@ def call_then_echo(max_calls: int = 1) -> FunctionModel:
     def fn(messages: list[Any], info: AgentInfo) -> ModelResponse:
         for m in reversed(messages):
             for p in m.parts:
-                if isinstance(p, ToolReturnPart):
+                if _is_tool_result(p):
                     if tool_returns(messages) >= max_calls:
                         return ModelResponse(parts=[TextPart(content=f'RESULT:{p.content}')])
                     break
