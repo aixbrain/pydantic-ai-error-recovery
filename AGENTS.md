@@ -21,10 +21,10 @@ Style and conventions follow the official capability library,
   operator surface louder. Every recovery is logged; a bug is never disguised
   as success.
 - Control-flow exceptions (`ModelRetry`/`ToolRetryError`, `ToolFailed`/`ToolFailedError`,
-  `CallDeferred`, `ApprovalRequired`, `SkipToolExecution`) must always propagate
-  untouched, regardless of classifier configuration. The set is hardcoded and
-  tracks Pydantic AI's control flow by hand -- it needs updating whenever core
-  adds or renames a control-flow exception.
+  `CallDeferred`, `ApprovalRequired`, `SkipToolExecution`, a sub-agent's `RunCancelled`)
+  must always propagate untouched, regardless of classifier configuration. The
+  set is hardcoded and tracks Pydantic AI's control flow by hand -- it needs
+  updating whenever core adds or renames a control-flow exception.
 - All tool-recovery logic lives in the single `wrap_tool_execute` hook;
   `on_tool_execute_error` is deliberately not implemented (one counter path,
   no double counting).

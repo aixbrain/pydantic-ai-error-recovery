@@ -11,10 +11,11 @@ from typing import Any
 
 import anyio
 import httpx
+import httpx2
 import pytest
 from pydantic_ai import Agent, DeferredToolRequests, RunContext
 from pydantic_ai.capabilities import AbstractCapability, Hooks, HookTimeoutError
-from pydantic_ai.exceptions import ApprovalRequired, ModelRetry, ToolFailed, UserError
+from pydantic_ai.exceptions import ApprovalRequired, ModelRetry, RunCancelled, ToolFailed, UsageLimitExceeded, UserError
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -46,14 +47,15 @@ async def test_retry_transient_recovers_transparently() -> None:
     assert calls[0] == 2  # retried once, no model round-trip
 
 
-async def test_retry_httpx_errors_out_of_the_box() -> None:
-    # httpx ships with pydantic-ai, so HTTP-based tools retry without any configuration.
+@pytest.mark.parametrize('error', [httpx.ConnectTimeout('connect timed out'), httpx2.ConnectError('refused')])
+async def test_retry_httpx_errors_out_of_the_box(error: BaseException) -> None:
+    # HTTP-based tools retry without any configuration, on `httpx` and on the `httpx2` pydantic-ai ships.
     calls = [0]
 
     def flaky_http() -> str:
         calls[0] += 1
         if calls[0] == 1:
-            raise httpx.ConnectTimeout('connect timed out')
+            raise error
         return 'ok'
 
     r = await build(ToolErrorRecovery(), flaky_http).run('hi')
@@ -133,6 +135,15 @@ async def test_bug_propagates() -> None:
     assert 'KeyError' in repr(exc_info.value)
 
 
+async def test_user_error_propagates() -> None:
+    # A setup error the model cannot work around ends the run, like a programming error.
+    def misconfigured() -> str:
+        raise UserError('capability not supported here')
+
+    with pytest.raises(UserError):
+        await build(ToolErrorRecovery(), misconfigured).run('hi')
+
+
 async def test_budget_exhausted_propagates() -> None:
     def bad() -> str:
         raise ValueError('nope')
@@ -207,6 +218,33 @@ async def test_tool_failed_passes_through() -> None:
     r = await build(cap, report_failure).run('hi')
     assert calls[0] == 1  # passed through, not retried by recovery
     assert 'upstream unavailable' in str(r.output)
+
+
+async def test_sub_agent_cancellation_passes_through() -> None:
+    # Core answers a sub-agent's cancellation with its own failed tool result; recovery must
+    # not retry it or replace that text, even under retry-everything.
+    cap = ToolErrorRecovery(RecoveryPolicy(classify=_retry_everything))
+    calls = [0]
+
+    def delegate() -> str:
+        calls[0] += 1
+        raise RunCancelled('sub-agent stopped')
+
+    r = await build(cap, delegate).run('hi')
+    assert calls[0] == 1
+    assert [p.outcome for m in r.all_messages() for p in m.parts if isinstance(p, ToolReturnPart)] == ['failed']
+    assert 'sub-agent stopped' in str(r.output)
+    assert 'RunCancelled' not in str(r.output)  # not our inform text
+
+
+async def test_sub_agent_usage_limit_informs() -> None:
+    # A sub-agent's own budget stop is reported to the model, not raised: the parent run's
+    # limits are checked outside the tool and still end it.
+    def delegate() -> str:
+        raise UsageLimitExceeded('sub-agent request_limit reached')
+
+    r = await build(ToolErrorRecovery(), delegate).run('hi')
+    assert 'UsageLimitExceeded' in str(r.output)
 
 
 async def test_inform_produces_failed_outcome() -> None:

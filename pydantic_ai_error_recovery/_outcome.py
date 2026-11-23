@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, assert_never
 
 import httpx
+import httpx2
 from pydantic_ai.exceptions import UserError
 
 DEFAULT_BUG_TYPES: tuple[type[BaseException], ...] = (
@@ -17,14 +18,22 @@ DEFAULT_BUG_TYPES: tuple[type[BaseException], ...] = (
     IndexError,
     AssertionError,
     ImportError,
+    UserError,
 )
-"""Programming errors: always propagate, never silently recovered."""
+"""Programming errors: always propagate, never silently recovered.
+
+`UserError` is Pydantic AI's setup error, such as a capability that does not support the run's configuration; the
+model cannot work around it.
+"""
 
 DEFAULT_TRANSIENT_TYPES: tuple[type[BaseException], ...] = (
     ConnectionRefusedError,
     httpx.ConnectError,
     httpx.ConnectTimeout,
     httpx.PoolTimeout,
+    httpx2.ConnectError,
+    httpx2.ConnectTimeout,
+    httpx2.PoolTimeout,
 )
 """Errors retried by default: only failures raised before the request was sent.
 
@@ -32,8 +41,8 @@ A retry is safe only if the first attempt cannot have reached the server, whatev
 tool does. That rules out read and write timeouts, connection resets and the builtin
 `TimeoutError`, which can all follow a request the server already received; add them
 for idempotent tools. No `OSError` (`FileNotFoundError`/`PermissionError` are not
-transient), no `HTTPStatusError` (retry semantics are a product decision). httpx ships
-with pydantic-ai-slim, so its types cost no dependency.
+transient), no `HTTPStatusError` (retry semantics are a product decision). `httpx2` ships
+with pydantic-ai-slim and shares no exception classes with `httpx`, so both are listed.
 """
 
 

@@ -15,6 +15,7 @@ from pydantic_ai.exceptions import (
     ApprovalRequired,
     CallDeferred,
     ModelRetry,
+    RunCancelled,
     SkipToolExecution,
     ToolFailed,
     ToolFailedError,
@@ -30,7 +31,8 @@ from pydantic_ai_error_recovery._policy import RecoveryPolicy
 # retry / approval / deferred / terminal-failure signal into something else. At the tool
 # boundary a tool-raised `ModelRetry` arrives as `ToolRetryError` and a tool-raised
 # `ToolFailed` (a terminal "report this failure to the model" signal, outcome='failed', no
-# retry) arrives as `ToolFailedError`; both raw and wrapped forms are listed.
+# retry) arrives as `ToolFailedError`; both raw and wrapped forms are listed. A sub-agent's
+# `RunCancelled` is answered by core with a failed tool result when the model made the call.
 _CONTROL_FLOW: tuple[type[BaseException], ...] = (
     SkipToolExecution,
     CallDeferred,
@@ -39,6 +41,7 @@ _CONTROL_FLOW: tuple[type[BaseException], ...] = (
     ToolRetryError,
     ToolFailed,
     ToolFailedError,
+    RunCancelled,
 )
 
 
